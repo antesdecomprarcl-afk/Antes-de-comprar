@@ -2,10 +2,13 @@
   "name": "antes-de-comprar",
   "version": "1.0.0",
   "private": true,
-  "description": "Sitio de guias de compra y links de afiliado de Mercado Libre Chile.",
+  "description": "Sitio de ofertas verificadas de Mercado Libre Chile: verificador diario de precios + generador estatico.",
   "type": "module",
   "scripts": {
     "build": "node src/build.mjs",
+    "verificar": "node src/verificar.mjs",
+    "diagnostico": "node src/verificar.mjs --diagnostico",
+    "test": "node --test \"test/*.test.mjs\"",
     "dev": "node src/build.mjs && node --run serve",
     "serve": "node -e \"const h=require('node:http'),f=require('node:fs'),p=require('node:path');h.createServer((q,s)=>{let u=decodeURIComponent(q.url.split('?')[0]);let fp=p.join('dist',u);if(f.existsSync(fp)&&f.statSync(fp).isDirectory())fp=p.join(fp,'index.html');if(!f.existsSync(fp)){s.writeHead(404);return s.end(f.existsSync('dist/404.html')?f.readFileSync('dist/404.html'):'404')}const t={'.html':'text/html','.css':'text/css','.xml':'application/xml','.txt':'text/plain'}[p.extname(fp)]||'application/octet-stream';s.writeHead(200,{'content-type':t});s.end(f.readFileSync(fp))}).listen(4321,()=>console.log('http://localhost:4321'))\""
   }
