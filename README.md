@@ -67,7 +67,7 @@ Las reglas están en `src/lib/ofertas.mjs` y cada una tiene su test en
 ```bash
 npm run build         # genera dist/
 npm run dev           # genera y sirve en http://localhost:4321
-npm test              # 48 tests: motor de ofertas, cliente de ML, reglas de publicación, importador
+npm test              # 51 tests: motor de ofertas, cliente de ML, reglas de publicación, importador
 
 npm run verificar     # verifica precios contra Mercado Libre
 npm run importar <archivo>   # suma productos del hub al catálogo
@@ -224,39 +224,54 @@ Canales: `tiktok`, `instagram`, `youtube`, `whatsapp`, `facebook`, `x`, `bio`,
 
 ---
 
-## Verificación: los tres caminos
+## Verificación: qué funciona y qué no
 
-El verificador no depende de un solo método, porque Mercado Libre cambia las
-condiciones de su API cada cierto tiempo y el sitio no se puede caer por eso.
-Intenta en orden y el primero que responde gana:
+Esto se comprobó contra Mercado Libre real el 7 de septiembre de 2026, con una
+sonda que corre en GitHub Actions (`herramientas/sondear-ml.mjs`), porque el
+entorno de desarrollo tiene `mercadolibre.com` bloqueado.
 
-1. **API con token** — rápida, 20 productos por llamada, dato oficial.
-2. **API sin token** — el mismo endpoint, mientras siga siendo público.
-3. **Ficha pública** — lee los datos estructurados del HTML del producto.
+| Camino | Resultado |
+|---|---|
+| API sin token | **401.** `api.mercadolibre.com/items` ya no es pública. |
+| API `/items/{id}` sin token | **403** `PolicyAgent`. |
+| Búsqueda pública del sitio | **403.** |
+| URL de producto armada desde el ID | **200, pero es el muro anti-bots.** ML le sirve `suspicious-traffic-frontend` a las IP de servidor. |
+| **Link de afiliado** | **200 con el precio correcto.** |
 
-Cada resultado queda anotado con su `fuente` en `data/estado.json`, así que
-siempre se puede auditar de dónde salió un precio.
+O sea: sin credenciales, el único camino que queda es seguir el link de
+afiliado. Y eso tiene un costo que conviene entender antes de automatizarlo.
 
-Para saber qué funciona hoy:
+### Por qué el link de afiliado va con tope
+
+**Cada visita a un link de afiliado cuenta como un clic en tu panel.** Verificar
+892 productos por día siguiendo esos links generaría miles de clics sin una sola
+venta: ensucia tus métricas y es exactamente el patrón que los programas de
+afiliados marcan como fraude. No vale la pena arriesgar la cuenta que cobra.
+
+Por eso `maxPorLinkAfiliado` (20 por defecto) limita cuántos se leen así por
+corrida, empezando por las fichas. El resto queda marcado "sin verificar" hasta
+que haya credenciales.
+
+### Credenciales de Mercado Libre
+
+Con ellas se verifica el catálogo entero por la API oficial, sin generar un solo
+clic falso. Son gratis:
+
+1. Entrá a [developers.mercadolibre.cl](https://developers.mercadolibre.cl/) con tu cuenta.
+2. Creá una aplicación. Te da un **App ID** y una **Secret Key**.
+3. Cargalas en el repositorio (*Settings → Secrets and variables → Actions*):
+   - `MELI_CLIENT_ID` = App ID
+   - `MELI_CLIENT_SECRET` = Secret Key
+
+El verificador prueba primero `client_credentials`, que no necesita pasar por el
+navegador. Si Mercado Libre no lo acepta para esa aplicación, lo dice en el log
+y hace falta además un `MELI_REFRESH_TOKEN` del flujo OAuth normal.
+
+Para ver qué camino funciona hoy:
 
 ```bash
 npm run diagnostico
 ```
-
-### Token de Mercado Libre (opcional)
-
-Sin token el sistema funciona. Si querés usar la API oficial, cargá estos
-secretos en el repositorio (Settings → Secrets → Actions):
-
-- `MELI_ACCESS_TOKEN` — token directo, dura 6 horas.
-- `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET`, `MELI_REFRESH_TOKEN` — para que se
-  renueve solo.
-
-**Ojo con el refresh token:** Mercado Libre lo rota en cada uso. El verificador
-renueva el token dentro de la corrida, pero no puede reescribir el secreto del
-repositorio por su cuenta. Si usás este modo, o actualizás el secreto a mano
-cada tanto, o le agregás al workflow un paso que lo guarde con un PAT. Sin token
-no existe este problema, y por eso es el modo por defecto.
 
 ---
 
