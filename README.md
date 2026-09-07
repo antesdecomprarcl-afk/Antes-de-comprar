@@ -1,153 +1,322 @@
 # Antes de comprar
 
-Sitio de guias de compra con links de afiliado de Mercado Libre Chile.
-Estatico, sin dependencias, se despliega en Netlify.
+Sitio de ofertas verificadas de Mercado Libre Chile. Estático, sin dependencias,
+se despliega en Netlify.
+
+La diferencia con cualquier otra página de ofertas está en una sola regla:
+
+> **Solo decimos que algo está rebajado cuando podemos demostrarlo con nuestro
+> propio historial de precios.**
+
+El precio tachado que muestra una tienda es dato del vendedor, y el truco más
+común del comercio online es subirlo dos semanas antes para poder "bajarlo".
+Contra eso no sirve confiar: sirve haber estado mirando. Por eso el sistema
+anota el precio de cada producto todos los días y compara contra lo que él mismo
+midió.
 
 ---
 
-## Lo unico que tenes que entender
-
-Todo el sitio sale de **un solo archivo**: `data/productos.json`.
-Agregas un producto ahi, corres un comando, y el sitio genera solo:
-
-- la ficha del producto con SEO y datos estructurados,
-- la pagina de su categoria,
-- el sitemap,
-- y **el link corto para compartir**.
+## Cómo funciona, en una vuelta
 
 ```
-data/productos.json  ->  npm run build  ->  dist/  ->  Netlify
+  GitHub Actions (todos los días, 11:00 UTC)
+        │
+        │  1. consulta Mercado Libre producto por producto
+        ▼
+  src/verificar.mjs ──► data/estado.json      ¿sigue vivo? ¿a qué precio?
+                   └──► data/historial.jsonl  una observación por día
+        │
+        │  2. commitea los datos → Netlify reconstruye
+        ▼
+  src/build.mjs ──► dist/   home, feed, fichas, categorías, /ir/<slug>
+```
+
+El verificador corre en GitHub Actions y **no** en Netlify a propósito: necesita
+guardar lo que aprendió. Un build de Netlify es efímero; el historial acumulado
+es justamente lo que después permite afirmar que una rebaja es real.
+
+---
+
+## Las etiquetas y qué significan
+
+Cada producto se publica con una etiqueta que dice exactamente cuánto podemos
+sostener de lo que estamos afirmando:
+
+| Etiqueta | Qué significa |
+|---|---|
+| **-30%** | Rebaja comprobada. El precio de hoy está 30% bajo la mediana de lo que costó en los últimos 30 días, medido por nosotros. |
+| **mínimo histórico** | Es el precio más bajo que le vimos en 90 días, y el producto tuvo variación real de precio (no es un precio plano que "toca su mínimo" todos los días). |
+| **-40% de lista** | Descuento **declarado por la tienda**, no verificado. Aparece cuando el producto es nuevo y aún no tenemos historial propio. |
+| **precio verificado** | No hay rebaja, pero hoy confirmamos precio y stock. |
+| **sin verificar** | Producto recién agregado, todavía sin pasar por la revisión. |
+
+Y lo que queda fuera:
+
+- Si el precio tachado del vendedor es más alto que **cualquier** precio que le
+  hayamos visto en 90 días, ese porcentaje no se publica.
+- Si la publicación se pausa o se queda sin stock, sale del sitio ese día.
+- Si un producto lleva más de 5 días sin poder confirmarse, deja de mostrarse.
+
+Las reglas están en `src/lib/ofertas.mjs` y cada una tiene su test en
+`test/ofertas.test.mjs`. Si cambiás un umbral, los tests te dicen qué se rompe.
+
+---
+
+## Comandos
+
+```bash
+npm run build         # genera dist/
+npm run dev           # genera y sirve en http://localhost:4321
+npm test              # 48 tests: motor de ofertas, cliente de ML, reglas de publicación, importador
+
+npm run verificar     # verifica precios contra Mercado Libre
+npm run importar <archivo>   # suma productos del hub al catálogo
+npm run diagnostico   # prueba qué caminos de consulta funcionan hoy
+```
+
+Opciones útiles del verificador:
+
+```bash
+node src/verificar.mjs --limite 100    # corta después de 100 productos
+node src/verificar.mjs --solo-fichas   # solo las 18 fichas destacadas
+node src/verificar.mjs --todo          # el catálogo completo, sin límite
+node src/verificar.mjs --dry-run       # muestra el resultado sin escribir nada
 ```
 
 ---
 
-## El link corto: por que importa
+## Los archivos de datos
 
-Cada producto genera automaticamente un link en **tu propio dominio**:
+| Archivo | Qué es | Quién lo edita |
+|---|---|---|
+| `data/catalogo.json` | Los 892 productos con link de afiliado, comisión e ID de Mercado Libre. El universo monetizable. | Vos, al agregar productos |
+| `data/productos.json` | Las 18 fichas con opinión propia. Son las únicas con página propia e indexable. | Vos |
+| `data/estado.json` | Lo que el verificador confirmó por última vez de cada producto. | El verificador |
+| `data/historial.jsonl` | Una línea por producto con su serie de precios diaria. | El verificador |
+| `data/categorias.json` | Caché de nombres de categoría de Mercado Libre. | El verificador |
+| `data/config.json` | Nombre, dominio, umbrales, analytics, disclosure. | Vos |
+
+`historial.jsonl` es JSONL y no JSON a propósito: se reescribe todos los días y
+vive en git. Con una línea por producto, cada commit guarda solo las pocas
+letras que cambiaron en vez del archivo entero.
+
+### Agregar un producto al catálogo
+
+```json
+{
+  "id": "MLC12345678",
+  "slug": "nombre-corto-y-legible",
+  "titulo": "Nombre del producto",
+  "categoria": "Cocina",
+  "comision": 11,
+  "link": "https://meli.la/TU-LINK",
+  "codigo": "5NLLZK-XXXX",
+  "hub": { "precio": 12990, "precioLista": 19990, "capturado": "2026-09-07" }
+}
+```
+
+`id` es lo que permite verificarlo. Si no lo tenés, dejalo fuera de la ficha y
+el verificador lo resuelve solo siguiendo el link corto la primera vez que corra.
+
+### Convertir un producto del catálogo en ficha
+
+Agregá una entrada en `data/productos.json` apuntando al mismo `mlId`. Con
+`veredicto` y `puntaje` completos se emiten datos estructurados de review para
+Google; sin ellos, no. **No los completes con opiniones inventadas**: son
+exactamente lo que Google penaliza desde las actualizaciones de contenido útil,
+y es el tipo de cosa que hunde un sitio entero.
+
+---
+
+## Sumar más productos del hub
+
+El hub de afiliados tiene muchos más productos que los 892 que ya están
+cargados, y va cambiando. Para volcarlo al catálogo sin copiar nada a mano:
+
+**1. Capturar.** Entrá al [hub](https://www.mercadolibre.cl/afiliados/hub?is_affiliate=true)
+con tu sesión iniciada, abrí la consola del navegador (F12 → Console), y pegá
+el contenido de `herramientas/capturar-hub.js`. Después:
+
+```js
+AC.auto()        // scrollea solo y va capturando; AC.parar() para cortar
+AC.descargar()   // baja productos-hub.json
+```
+
+El capturador escucha las respuestas que el hub le pide a su propio servidor
+mientras navegás, en vez de adivinar cómo está armado el HTML. Por eso sigue
+funcionando aunque Mercado Libre le cambie el diseño a la página. Solo lee lo
+que tu navegador ya cargó y lo guarda en tu disco: no manda nada a ningún lado.
+
+**2. Importar.**
+
+```bash
+npm run importar productos-hub.json
+npm run verificar
+```
+
+El importador acepta el JSON del capturador, un JSON crudo de la API del hub
+(el que copiás desde la pestaña Network), JSONL o un CSV con encabezado.
+Detecta la forma solo y mapea los nombres de campo más comunes.
+
+### La regla que protege tus links
+
+**El slug de un producto que ya existe nunca cambia.** El slug es la URL
+pública (`/ir/<slug>`) que puede estar pegada en videos, historias y comentarios
+ya publicados. Si el producto cambia de nombre en Mercado Libre, se actualiza el
+título pero se mantiene el slug: romper un link ya compartido es perder ventas
+que ya estaban pagadas con trabajo hecho.
+
+Reimportar el mismo archivo dos veces no duplica nada ni mueve un slug.
+
+### Si el capturador no encuentra nada
+
+Puede pasar si Mercado Libre cambia mucho la página. Plan B, que no depende de
+adivinar nada:
+
+1. Abrí las herramientas del navegador → pestaña **Network** (Red).
+2. Recargá el hub y buscá la petición que trae los productos.
+3. Botón derecho → **Copy response**, pegalo en un archivo `hub.json`.
+4. `npm run importar hub.json` — también acepta ese JSON crudo.
+
+---
+
+## El link corto: por qué importa
+
+Cada producto genera un link en tu propio dominio:
 
 ```
 https://antesdecomprar.cl/ir/<slug>
 ```
 
-Ese es el link que compartis en TikTok, Instagram, WhatsApp, comentarios, donde sea.
-No compartas nunca el link crudo de Mercado Libre. Razones:
+Ese es el que compartís. Nunca el de Mercado Libre directo:
 
-1. **Es tuyo.** Si Mercado Libre cambia el formato de sus links, o queres cambiar el
-   producto que promocionas, editas el JSON y todos los links ya publicados apuntan
-   al nuevo destino. No tenes que volver a editar un solo video.
-2. **No lo bloquean.** Las plataformas filtran links de afiliado directos. Un link a
-   tu dominio pasa limpio.
-3. **Es legible.** `antesdecomprar.cl/ir/audifonos-sony` genera mas clics que
-   `mercadolibre.com/sec/2xK9fQ`.
-4. **Se puede medir.** Ver abajo.
+1. **Es tuyo.** Si cambia el formato de los links de ML, o querés cambiar el
+   producto que promocionás, editás el JSON y todos los links ya publicados
+   apuntan al destino nuevo. No tenés que volver a editar un solo video.
+2. **No lo bloquean.** Las plataformas filtran links de afiliado directos.
+3. **Se puede medir.** Ver abajo.
 
-Usa `302` (redireccion temporal) a proposito: si fuera `301`, el navegador se
-quedaria pegado con el destino viejo para siempre y no podrias cambiarlo.
+Usa `302` a propósito: con `301` el navegador se quedaría pegado con el destino
+viejo para siempre.
 
 ### Medir por canal
 
-Genera un link de afiliado distinto por canal en el panel de Mercado Libre y
-mapealos asi:
+Generá un link de afiliado distinto por canal en el panel de Mercado Libre:
 
 ```json
-"linkAfiliado": "https://mercadolibre.com/sec/AAA",
 "linksPorCanal": {
-  "tiktok":    "https://mercadolibre.com/sec/BBB",
-  "instagram": "https://mercadolibre.com/sec/CCC"
+  "tiktok":    "https://meli.la/AAA",
+  "instagram": "https://meli.la/BBB"
 }
 ```
 
-Eso te da:
+| Compartís en | Link que usás |
+|---|---|
+| TikTok | `antesdecomprar.cl/ir/<slug>/tiktok` |
+| Instagram | `antesdecomprar.cl/ir/<slug>/instagram` |
+| Cualquier otro lado | `antesdecomprar.cl/ir/<slug>` |
 
-| Compartis en | Link que usas                              |
-|--------------|--------------------------------------------|
-| TikTok       | `antesdecomprar.cl/ir/<slug>/tiktok`       |
-| Instagram    | `antesdecomprar.cl/ir/<slug>/instagram`    |
-| Cualquier otro lado | `antesdecomprar.cl/ir/<slug>`       |
+El feed ya manda todos sus botones por `/tiktok`, así que el panel de Mercado
+Libre te va a decir cuánto vende el feed sin que pagues ninguna herramienta.
 
-Y el panel de Mercado Libre te dice **que canal te esta generando ventas de verdad**,
-sin que tengas que pagar ninguna herramienta de analitica.
-
-Canales soportados: `tiktok`, `instagram`, `youtube`, `whatsapp`, `facebook`, `x`,
-`bio`, `newsletter`. Un canal sin link propio cae automaticamente al link principal.
+Canales: `tiktok`, `instagram`, `youtube`, `whatsapp`, `facebook`, `x`, `bio`,
+`newsletter`. Un canal sin link propio cae al link principal.
 
 ---
 
-## Agregar un producto
+## Verificación: los tres caminos
 
-Abri `data/productos.json` y agrega un objeto al arreglo:
+El verificador no depende de un solo método, porque Mercado Libre cambia las
+condiciones de su API cada cierto tiempo y el sitio no se puede caer por eso.
+Intenta en orden y el primero que responde gana:
 
-```json
-{
-  "slug": "audifonos-sony-wh-ch720n",
-  "titulo": "Sony WH-CH720N",
-  "categoria": "Audio y Video",
-  "resumen": "Una linea que responda: por que este y no otro.",
-  "linkAfiliado": "https://mercadolibre.com/sec/TU-LINK",
-  "imagen": "https://http2.mlstatic.com/...",
-  "precio": 89990,
-  "precioAntes": 129990,
-  "puntaje": 8.4,
-  "veredicto": "Tu opinion real, en 2 o 3 frases.",
-  "paraQuien": "A quien le sirve y a quien no.",
-  "pros": ["Algo que puedas justificar", "Otro"],
-  "contras": ["Se honesto: esto es lo que genera confianza"],
-  "specs": { "Marca": "Sony", "Modelo": "WH-CH720N", "Garantia": "12 meses" },
-  "actualizado": "2026-09-07",
-  "publicado": true
-}
-```
+1. **API con token** — rápida, 20 productos por llamada, dato oficial.
+2. **API sin token** — el mismo endpoint, mientras siga siendo público.
+3. **Ficha pública** — lee los datos estructurados del HTML del producto.
 
-| Campo | Obligatorio | Nota |
-|---|---|---|
-| `slug` | si | Unico. Sin espacios ni acentos. Define la URL. |
-| `titulo` | si | |
-| `linkAfiliado` | si | Sin esto el link corto no redirige. |
-| `publicado` | no | `false` genera la pagina pero la deja fuera del sitemap y del inicio. |
-| `puntaje` + `veredicto` | no | Si estan **ambos**, se emiten datos estructurados de review para Google. |
-| el resto | no | Cada bloque aparece solo si tiene contenido. |
+Cada resultado queda anotado con su `fuente` en `data/estado.json`, así que
+siempre se puede auditar de dónde salió un precio.
 
-Despues:
+Para saber qué funciona hoy:
 
 ```bash
-npm run build     # construye dist/
-npm run dev       # construye y sirve en http://localhost:4321
+npm run diagnostico
 ```
 
-El build **falla** si hay slugs duplicados, y **avisa** si a un producto le falta el
-link de afiliado o si todavia esta marcado como ejemplo.
+### Token de Mercado Libre (opcional)
+
+Sin token el sistema funciona. Si querés usar la API oficial, cargá estos
+secretos en el repositorio (Settings → Secrets → Actions):
+
+- `MELI_ACCESS_TOKEN` — token directo, dura 6 horas.
+- `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET`, `MELI_REFRESH_TOKEN` — para que se
+  renueve solo.
+
+**Ojo con el refresh token:** Mercado Libre lo rota en cada uso. El verificador
+renueva el token dentro de la corrida, pero no puede reescribir el secreto del
+repositorio por su cuenta. Si usás este modo, o actualizás el secreto a mano
+cada tanto, o le agregás al workflow un paso que lo guarde con un PAT. Sin token
+no existe este problema, y por eso es el modo por defecto.
 
 ---
 
 ## Publicar
 
-```bash
-git add -A
-git commit -m "Agrego ficha: Sony WH-CH720N"
-git push
-```
+Netlify ya está configurado en `netlify.toml` (`npm run build` → `dist`).
+Conectalo al repositorio y despliega solo con cada push, incluidos los del
+verificador.
 
-Si Netlify esta conectado a este repo, despliega solo. La configuracion ya esta en
-`netlify.toml` (`npm run build` -> `dist`).
+### Conectar el dominio
+
+1. En Netlify: **Domain settings → Add custom domain** → `antesdecomprar.cl`.
+2. En tu registrador, apuntá los DNS a Netlify (te da los nameservers o un
+   registro `A`/`CNAME`).
+3. Activá HTTPS (Netlify emite el certificado gratis).
+4. Verificá que `data/config.json` tenga el dominio correcto en `url`: de ahí
+   salen el sitemap, los canonicals y los links cortos.
 
 ---
 
-## Regla editorial
+## Qué se indexa y qué no
 
-No publiques fichas de productos que no conoces. Un sitio de recomendaciones vive
-de una sola cosa: que te crean. Las contras honestas venden mas que el entusiasmo,
-y las reviews inventadas son exactamente lo que Google penaliza desde las
-actualizaciones de contenido util.
+Solo las 18 fichas con opinión propia entran al sitemap. Las categorías y el
+feed llevan `noindex`.
+
+No es un descuido: llenar Google de páginas de afiliado sin contenido propio es
+la forma más rápida de que el sitio entero deje de posicionar. Las páginas que
+tienen que ganar búsquedas son las que tienen algo que Google no encuentra en
+otro lado — tu opinión y tu historial de precios.
+
+Cuando escribas una ficha nueva con veredicto real, esa entra al índice también.
 
 ---
 
 ## Estructura
 
 ```
-data/config.json      Nombre, dominio, analytics, disclosure, redes
-data/productos.json   Unica fuente de verdad del catalogo
-src/build.mjs         Generador (Node puro, sin dependencias)
-public/estilos.css    Estilos (claro y oscuro automatico)
+data/                 Los datos (ver tabla arriba)
+src/build.mjs         Generador del sitio
+src/verificar.mjs     Verificador diario
+src/importar.mjs      Importador de productos del hub
+src/lib/ofertas.mjs   Motor de ofertas: qué es una rebaja real
+src/lib/meli.mjs      Cliente de Mercado Libre (API + respaldo por HTML)
+src/lib/componer.mjs  Reglas de publicación: qué entra al sitio
+src/lib/historial.mjs Lectura y escritura del historial de precios
+src/lib/categoria.mjs Categoría y slug a partir del título
+herramientas/         Capturador del hub (se pega en la consola del navegador)
+public/               Estilos, feed.js, favicon
+test/                 Tests de todo lo anterior
+.github/workflows/    Verificación diaria y CI
 dist/                 Salida generada. No la edites: se borra en cada build.
-netlify.toml          Configuracion de despliegue
 ```
+
+---
+
+## Regla editorial
+
+No publiques fichas de productos que no conocés. Un sitio de recomendaciones
+vive de una sola cosa: que te crean. Las contras honestas venden más que el
+entusiasmo, y una rebaja inventada se nota.
+
+Todo el sistema técnico de este repositorio existe para sostener esa regla
+cuando el catálogo crece a un tamaño que ya no podés revisar a mano.

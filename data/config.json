@@ -1,8 +1,8 @@
 {
   "nombre": "Antes de comprar",
-  "tagline": "Comparamos, probamos y te decimos si vale la pena.",
+  "tagline": "Ofertas reales, verificadas todos los días.",
   "url": "https://antesdecomprar.cl",
-  "descripcion": "Guías de compra, comparativas y opiniones honestas de productos en Chile. Revisamos precios y características antes de que gastes tu plata.",
+  "descripcion": "Revisamos todos los días los precios de Mercado Libre Chile y publicamos solo las ofertas cuya rebaja podemos comprobar con nuestro propio historial de precios.",
   "idioma": "es-CL",
   "pais": "CL",
   "moneda": "CLP",
@@ -17,10 +17,29 @@
     "youtube": "",
     "whatsapp": ""
   },
-  "disclosure": "Antes de comprar participa en el Programa de Afiliados y Creadores de Mercado Libre. Si compras a traves de nuestros enlaces podemos recibir una comision, sin costo adicional para ti. Esto nunca cambia nuestra opinion sobre un producto.",
+  "disclosure": "Antes de comprar participa en el Programa de Afiliados y Creadores de Mercado Libre. Si compras a través de nuestros enlaces podemos recibir una comisión, sin costo adicional para ti. Eso nunca cambia qué productos elegimos ni qué decimos de ellos.",
   "redireccion": {
     "prefijo": "/ir",
     "codigo": 302,
     "comentario": "302 = redireccion temporal. Es lo correcto aqui: te permite cambiar el destino de un link ya compartido sin que el navegador se quede pegado con el destino viejo."
+  },
+  "verificacion": {
+    "limiteDiario": 400,
+    "concurrencia": 4,
+    "pausaMs": 250,
+    "maxFallos": 3,
+    "diasParaCaducar": 5,
+    "mostrarSinVerificar": true,
+    "comentario": "limiteDiario acota cuantos productos se consultan por corrida (el resto entra por rotacion al dia siguiente). diasParaCaducar y maxFallos definen cuando un producto deja de publicarse por falta de confirmacion. maxResolucionesPorCorrida acota cuantos links sin ID se resuelven por corrida despues de una importacion grande. mostrarSinVerificar permite levantar el sitio antes de la primera verificacion, marcando esos productos como no verificados.",
+    "maxResolucionesPorCorrida": 150
+  },
+  "feed": {
+    "enHtml": 40,
+    "maximo": 300,
+    "comentario": "enHtml: cuantas ofertas van escritas en el HTML del feed (las ve Google y se pintan al instante). maximo: cuantas viajan en /api/ofertas.json para el scroll infinito."
+  },
+  "catalogo": {
+    "fichasIndexadas": true,
+    "comentario": "Solo las fichas con opinion propia entran al sitemap. El resto del catalogo se muestra en el feed y en las categorias, pero no genera paginas indexables: Google penaliza los sitios de afiliados llenos de paginas sin contenido propio."
   }
 }
