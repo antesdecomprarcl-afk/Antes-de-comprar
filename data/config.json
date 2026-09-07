@@ -1,0 +1,26 @@
+{
+  "nombre": "Antes de comprar",
+  "tagline": "Comparamos, probamos y te decimos si vale la pena.",
+  "url": "https://antesdecomprar.cl",
+  "descripcion": "Guías de compra, comparativas y opiniones honestas de productos en Chile. Revisamos precios y características antes de que gastes tu plata.",
+  "idioma": "es-CL",
+  "pais": "CL",
+  "moneda": "CLP",
+  "email": "maticescentromayorista@gmail.com",
+  "analytics": {
+    "ga4": "",
+    "comentario": "Pega aqui tu ID de Google Analytics 4 (formato G-XXXXXXXXXX). Si lo dejas vacio no se inyecta ningun script."
+  },
+  "redes": {
+    "tiktok": "",
+    "instagram": "",
+    "youtube": "",
+    "whatsapp": ""
+  },
+  "disclosure": "Antes de comprar participa en el Programa de Afiliados y Creadores de Mercado Libre. Si compras a traves de nuestros enlaces podemos recibir una comision, sin costo adicional para ti. Esto nunca cambia nuestra opinion sobre un producto.",
+  "redireccion": {
+    "prefijo": "/ir",
+    "codigo": 302,
+    "comentario": "302 = redireccion temporal. Es lo correcto aqui: te permite cambiar el destino de un link ya compartido sin que el navegador se quede pegado con el destino viejo."
+  }
+}

@@ -1,0 +1,20 @@
+# Netlify: build del sitio estatico.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Cabeceras de seguridad y cache.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "SAMEORIGIN"
+
+[[headers]]
+  for = "/estilos.css"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

@@ -1,0 +1,29 @@
+[
+  {
+    "_ejemplo": true,
+    "slug": "ejemplo-reemplazar",
+    "titulo": "EJEMPLO - reemplaza esta ficha por un producto real",
+    "categoria": "Ejemplos",
+    "resumen": "Esta ficha es una plantilla para que veas como se ve el sitio. Borrala y crea las tuyas con datos reales de productos que hayas revisado. No publiques opiniones de productos que no conoces.",
+    "linkAfiliado": "https://www.mercadolibre.cl/",
+    "imagen": "",
+    "precio": null,
+    "precioAntes": null,
+    "puntaje": null,
+    "veredicto": "",
+    "pros": [
+      "Cada punto a favor debe ser algo que puedas justificar"
+    ],
+    "contras": [
+      "Se honesto con lo malo: es lo que genera confianza y ventas"
+    ],
+    "specs": {
+      "Marca": "-",
+      "Modelo": "-",
+      "Garantia": "-"
+    },
+    "paraQuien": "Describe en una linea a quien le sirve este producto y a quien no.",
+    "actualizado": "2026-09-07",
+    "publicado": false
+  }
+]
