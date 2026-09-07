@@ -7,6 +7,7 @@
   "scripts": {
     "build": "node src/build.mjs",
     "verificar": "node src/verificar.mjs",
+    "importar": "node src/importar.mjs",
     "diagnostico": "node src/verificar.mjs --diagnostico",
     "test": "node --test \"test/*.test.mjs\"",
     "dev": "node src/build.mjs && node --run serve",

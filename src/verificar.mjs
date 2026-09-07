@@ -98,10 +98,11 @@ const porAntiguedad = (a, b) => {
 
 let cola;
 if (bandera('--solo-fichas')) {
-  cola = catalogo.filter((c) => idsFicha.has(c.id));
+  cola = catalogo.filter((c) => c.id && idsFicha.has(c.id));
 } else {
-  const fichas = catalogo.filter((c) => idsFicha.has(c.id));
-  const resto = catalogo.filter((c) => !idsFicha.has(c.id)).sort(porAntiguedad);
+  const conId = catalogo.filter((c) => c.id);
+  const fichas = conId.filter((c) => idsFicha.has(c.id));
+  const resto = conId.filter((c) => !idsFicha.has(c.id)).sort(porAntiguedad);
   cola = [...fichas, ...resto].slice(0, LIMITE);
 }
 
@@ -110,19 +111,40 @@ console.log(`  autenticacion: ${process.env.MELI_ACCESS_TOKEN ? 'token' : proces
 
 /* ---------- IDs faltantes ---------- */
 
-// Una ficha puede llegar sin ID de Mercado Libre (por ejemplo, si se agrego a
-// mano con solo el link corto). Lo resolvemos siguiendo el link una vez y lo
-// dejamos guardado para no volver a hacerlo nunca mas.
-const sinId = productos.filter((p) => !p.mlId && p.linkAfiliado);
-if (sinId.length) {
-  console.log(`\nResolviendo ${sinId.length} link(s) sin ID de Mercado Libre...`);
-  for (const p of sinId) {
+// Un producto puede llegar sin ID de Mercado Libre: importado del hub, o
+// agregado a mano con solo el link corto. Sin ID no se puede verificar, asi que
+// seguimos el link una vez y lo dejamos guardado para no repetirlo nunca mas.
+const fichasSinId = productos.filter((p) => !p.mlId && p.linkAfiliado);
+const catalogoSinId = catalogo.filter((c) => !c.id && c.link);
+
+if (fichasSinId.length || catalogoSinId.length) {
+  const total = fichasSinId.length + catalogoSinId.length;
+  console.log(`\nResolviendo ${total} link(s) sin ID de Mercado Libre...`);
+  let resueltos = 0;
+
+  for (const p of fichasSinId) {
     const r = await cliente.resolverCorto(p.linkAfiliado);
-    if (r.id) { p.mlId = r.id; console.log(`  ✓ ${p.slug} -> ${r.id}`); }
-    else console.log(`  ✗ ${p.slug}: ${r.error || 'no pude extraer el ID'}`);
+    if (r.id) { p.mlId = r.id; resueltos++; console.log(`  ✓ ficha ${p.slug} -> ${r.id}`); }
+    else console.log(`  ✗ ficha ${p.slug}: ${r.error || 'no pude extraer el ID'}`);
     await dormir(vcfg.pausaMs);
   }
-  if (!DRY) escribirJson('data/productos.json', productos);
+
+  // El catalogo puede traer cientos sin ID despues de una importacion grande:
+  // se resuelven de a tandas para no pasarse del tiempo del workflow. Los que
+  // queden siguen en la proxima corrida.
+  for (const c of catalogoSinId.slice(0, vcfg.maxResolucionesPorCorrida ?? 150)) {
+    const r = await cliente.resolverCorto(c.link);
+    if (r.id) { c.id = r.id; resueltos++; }
+    await dormir(vcfg.pausaMs);
+  }
+
+  const pendientes = catalogoSinId.length - Math.min(catalogoSinId.length, vcfg.maxResolucionesPorCorrida ?? 150);
+  console.log(`  ${resueltos} de ${total} resuelto(s)${pendientes ? `; quedan ${pendientes} para la proxima corrida` : ''}`);
+
+  if (!DRY) {
+    if (fichasSinId.length) escribirJson('data/productos.json', productos);
+    if (catalogoSinId.length) escribirJson('data/catalogo.json', catalogo);
+  }
 }
 
 /* ---------- consulta ---------- */

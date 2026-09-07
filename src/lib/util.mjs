@@ -32,8 +32,11 @@ export const hoy = (d = new Date()) =>
 
 export const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
+/** Resuelve contra la raiz del proyecto, salvo que ya sea una ruta absoluta. */
+const resolver = (rel) => (path.isAbsolute(rel) ? rel : path.join(ROOT, rel));
+
 export function leerJson(rel, porDefecto = null) {
-  const p = path.join(ROOT, rel);
+  const p = resolver(rel);
   if (!fs.existsSync(p)) {
     if (porDefecto === null) throw new Error(`Falta el archivo ${rel}`);
     return porDefecto;
@@ -46,7 +49,7 @@ export function leerJson(rel, porDefecto = null) {
 }
 
 export function escribirJson(rel, datos, { compacto = false } = {}) {
-  const p = path.join(ROOT, rel);
+  const p = resolver(rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(datos, null, compacto ? 0 : 2) + '\n');
 }

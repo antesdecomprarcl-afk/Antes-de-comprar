@@ -67,9 +67,10 @@ Las reglas están en `src/lib/ofertas.mjs` y cada una tiene su test en
 ```bash
 npm run build         # genera dist/
 npm run dev           # genera y sirve en http://localhost:4321
-npm test              # 34 tests: motor de ofertas, cliente de ML, reglas de publicación
+npm test              # 48 tests: motor de ofertas, cliente de ML, reglas de publicación, importador
 
 npm run verificar     # verifica precios contra Mercado Libre
+npm run importar <archivo>   # suma productos del hub al catálogo
 npm run diagnostico   # prueba qué caminos de consulta funcionan hoy
 ```
 
@@ -124,6 +125,58 @@ Agregá una entrada en `data/productos.json` apuntando al mismo `mlId`. Con
 Google; sin ellos, no. **No los completes con opiniones inventadas**: son
 exactamente lo que Google penaliza desde las actualizaciones de contenido útil,
 y es el tipo de cosa que hunde un sitio entero.
+
+---
+
+## Sumar más productos del hub
+
+El hub de afiliados tiene muchos más productos que los 892 que ya están
+cargados, y va cambiando. Para volcarlo al catálogo sin copiar nada a mano:
+
+**1. Capturar.** Entrá al [hub](https://www.mercadolibre.cl/afiliados/hub?is_affiliate=true)
+con tu sesión iniciada, abrí la consola del navegador (F12 → Console), y pegá
+el contenido de `herramientas/capturar-hub.js`. Después:
+
+```js
+AC.auto()        // scrollea solo y va capturando; AC.parar() para cortar
+AC.descargar()   // baja productos-hub.json
+```
+
+El capturador escucha las respuestas que el hub le pide a su propio servidor
+mientras navegás, en vez de adivinar cómo está armado el HTML. Por eso sigue
+funcionando aunque Mercado Libre le cambie el diseño a la página. Solo lee lo
+que tu navegador ya cargó y lo guarda en tu disco: no manda nada a ningún lado.
+
+**2. Importar.**
+
+```bash
+npm run importar productos-hub.json
+npm run verificar
+```
+
+El importador acepta el JSON del capturador, un JSON crudo de la API del hub
+(el que copiás desde la pestaña Network), JSONL o un CSV con encabezado.
+Detecta la forma solo y mapea los nombres de campo más comunes.
+
+### La regla que protege tus links
+
+**El slug de un producto que ya existe nunca cambia.** El slug es la URL
+pública (`/ir/<slug>`) que puede estar pegada en videos, historias y comentarios
+ya publicados. Si el producto cambia de nombre en Mercado Libre, se actualiza el
+título pero se mantiene el slug: romper un link ya compartido es perder ventas
+que ya estaban pagadas con trabajo hecho.
+
+Reimportar el mismo archivo dos veces no duplica nada ni mueve un slug.
+
+### Si el capturador no encuentra nada
+
+Puede pasar si Mercado Libre cambia mucho la página. Plan B, que no depende de
+adivinar nada:
+
+1. Abrí las herramientas del navegador → pestaña **Network** (Red).
+2. Recargá el hub y buscá la petición que trae los productos.
+3. Botón derecho → **Copy response**, pegalo en un archivo `hub.json`.
+4. `npm run importar hub.json` — también acepta ese JSON crudo.
 
 ---
 
@@ -244,10 +297,13 @@ Cuando escribas una ficha nueva con veredicto real, esa entra al índice tambié
 data/                 Los datos (ver tabla arriba)
 src/build.mjs         Generador del sitio
 src/verificar.mjs     Verificador diario
+src/importar.mjs      Importador de productos del hub
 src/lib/ofertas.mjs   Motor de ofertas: qué es una rebaja real
 src/lib/meli.mjs      Cliente de Mercado Libre (API + respaldo por HTML)
 src/lib/componer.mjs  Reglas de publicación: qué entra al sitio
 src/lib/historial.mjs Lectura y escritura del historial de precios
+src/lib/categoria.mjs Categoría y slug a partir del título
+herramientas/         Capturador del hub (se pega en la consola del navegador)
 public/               Estilos, feed.js, favicon
 test/                 Tests de todo lo anterior
 .github/workflows/    Verificación diaria y CI

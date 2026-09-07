@@ -30,7 +30,8 @@
     "maxFallos": 3,
     "diasParaCaducar": 5,
     "mostrarSinVerificar": true,
-    "comentario": "limiteDiario acota cuantos productos se consultan por corrida (el resto entra por rotacion al dia siguiente). diasParaCaducar y maxFallos definen cuando un producto deja de publicarse por falta de confirmacion. mostrarSinVerificar permite levantar el sitio antes de la primera verificacion, marcando esos productos como no verificados."
+    "comentario": "limiteDiario acota cuantos productos se consultan por corrida (el resto entra por rotacion al dia siguiente). diasParaCaducar y maxFallos definen cuando un producto deja de publicarse por falta de confirmacion. maxResolucionesPorCorrida acota cuantos links sin ID se resuelven por corrida despues de una importacion grande. mostrarSinVerificar permite levantar el sitio antes de la primera verificacion, marcando esos productos como no verificados.",
+    "maxResolucionesPorCorrida": 150
   },
   "feed": {
     "enHtml": 40,
