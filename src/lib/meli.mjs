@@ -57,11 +57,30 @@ export function extraerId(url = '') {
 /** Lee los datos del producto desde el HTML de su ficha publica. */
 export function parsearPagina(html, id = null) {
   if (!html) return null;
+
+  // Mercado Libre le sirve un muro anti-bots a las IP de datacenter. Es una
+  // pagina de ~23 KB sin ningun dato. Distinguirla importa: no es que el
+  // producto no exista, es que no nos dejaron verlo.
+  if (/suspicious-traffic|gz-account-verification/i.test(html)) {
+    return { id, error: 'muro anti-bots de Mercado Libre' };
+  }
+
   const salida = { id };
+
+  // Formato actual (comprobado contra la pagina real en septiembre de 2026):
+  // el precio viaja como JSON incrustado en el HTML.
+  //   "current_price":{"value":26990,"currency":"CLP"}
+  //   "previous_price":{"value":34990,...}
+  const actual = html.match(/"current_price"\s*:\s*\{\s*"value"\s*:\s*(\d+(?:\.\d+)?)/);
+  const anterior = html.match(/"previous_price"\s*:\s*\{\s*"value"\s*:\s*(\d+(?:\.\d+)?)/);
+  if (actual) {
+    salida.price = Number(actual[1]);
+    if (anterior) salida.original_price = Number(anterior[1]);
+  }
 
   // 1. Datos estructurados: es lo que Mercado Libre le entrega a Google, asi
   //    que es lo mas estable que publica la pagina.
-  for (const m of html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) {
+  for (const m of salida.price == null ? html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi) : []) {
     let json;
     try { json = JSON.parse(m[1].trim()); } catch { continue; }
     for (const nodo of [].concat(json['@graph'] || json)) {
@@ -134,18 +153,27 @@ export function crearCliente({
     }
   }
 
-  /** Renueva el access token. Los de Mercado Libre duran 6 horas. */
+  /**
+   * Consigue un access token. Los de Mercado Libre duran 6 horas.
+   *
+   * Con refresh token usa ese; con solo id y secreto prueba client_credentials,
+   * que evita tener que pasar por el navegador. Si Mercado Libre no lo acepta
+   * para esta aplicacion, lo dice en el log y hace falta el refresh token.
+   */
   async function renovarToken() {
-    if (!clientId || !clientSecret || !refreshToken) return null;
-    const cuerpo = new URLSearchParams({
-      grant_type: 'refresh_token', client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken,
-    });
+    if (!clientId || !clientSecret) return null;
+    const cuerpo = refreshToken
+      ? new URLSearchParams({ grant_type: 'refresh_token', client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken })
+      : new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret });
     const r = await pedir(`${API}/oauth/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body: cuerpo,
     });
-    if (!r.ok) { log(`no se pudo renovar el token (HTTP ${r.status})`); return null; }
+    if (!r.ok) {
+      log(`no se pudo conseguir token (HTTP ${r.status}${refreshToken ? '' : ', probando client_credentials'})`);
+      return null;
+    }
     const j = await r.json();
     accessToken = j.access_token || null;
     // El refresh token de Mercado Libre es de un solo uso: hay que guardar el nuevo.
@@ -160,7 +188,11 @@ export function crearCliente({
     const url = `${API}/items?ids=${ids.join(',')}&attributes=${ATRIBUTOS}`;
     const r = await pedir(url, { headers: { accept: 'application/json', ...auth() } });
     if (r.status === 401 || r.status === 403) {
-      if (accessToken || !refreshToken) { estrategiasCaidas.add('api'); log(`API rechazada (HTTP ${r.status}); paso a leer la pagina publica`); return null; }
+      if (accessToken || !(clientId && clientSecret)) {
+        estrategiasCaidas.add('api');
+        log(`API rechazada (HTTP ${r.status}). Sin credenciales de Mercado Libre no hay API.`);
+        return null;
+      }
       const nuevo = await renovarToken();
       if (!nuevo) { estrategiasCaidas.add('api'); return null; }
       return porApi(ids);
@@ -176,14 +208,24 @@ export function crearCliente({
     return out;
   }
 
-  /** Estrategia 3: leer la ficha publica. */
-  async function porPagina(id, permalink = null) {
-    const url = permalink || urlItem(id, sitio);
-    const r = await pedir(url, { headers: { accept: 'text/html' } });
+  /**
+   * Estrategia 3: leer la pagina del producto.
+   *
+   * Ojo con la URL que se le pasa. Las URLs armadas desde el ID
+   * (articulo.mercadolibre.cl/MLC-xxx) devuelven el muro anti-bots cuando la
+   * peticion sale de un servidor, asi que en la practica solo sirve el link de
+   * afiliado. Eso tiene un costo que el que llama tiene que tener presente:
+   * cada visita cuenta como un clic en el panel de afiliados.
+   */
+  async function porPagina(id, url = null) {
+    const destino = url || urlItem(id, sitio);
+    const r = await pedir(destino, { headers: { accept: 'text/html' } });
     if (!r.ok) return { id, error: `pagina HTTP ${r.status}` };
     const html = await r.text();
     const dato = parsearPagina(html, id);
-    return dato || { id, error: 'no encontre el precio en la pagina' };
+    if (!dato) return { id, error: 'no encontre el precio en la pagina' };
+    if (dato.error) return { id, error: dato.error };
+    return dato;
   }
 
   /** Sigue un link corto (meli.la) hasta la publicacion y devuelve el ID. */
@@ -204,7 +246,7 @@ export function crearCliente({
    * Consulta un lote de productos. Devuelve un Map id -> dato normalizado
    * (o `{ id, error }` para los que no se pudieron verificar).
    */
-  async function consultar(ids, { permalinks = {} } = {}) {
+  async function consultar(ids, { urls = {}, sinPagina = false } = {}) {
     const salida = new Map();
     const pendientes = [];
 
@@ -224,7 +266,11 @@ export function crearCliente({
     }
 
     for (const id of pendientes) {
-      try { salida.set(id, await porPagina(id, permalinks[id])); }
+      // Sin URL propia no hay nada que leer: la URL armada desde el ID solo
+      // devuelve el muro anti-bots. Mejor anotar el fallo que gastar la
+      // peticion y ensuciar los datos.
+      if (sinPagina || !urls[id]) { salida.set(id, { id, error: 'sin API y sin URL utilizable' }); continue; }
+      try { salida.set(id, await porPagina(id, urls[id])); }
       catch (err) { salida.set(id, { id, error: err.message }); }
     }
     return salida;
