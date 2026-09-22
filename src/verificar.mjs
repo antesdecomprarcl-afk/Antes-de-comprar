@@ -107,7 +107,7 @@ if (bandera('--solo-fichas')) {
 }
 
 console.log(`\nVerificando ${cola.length} de ${catalogo.length} productos · ${FECHA}`);
-console.log(`  autenticacion: ${process.env.MELI_ACCESS_TOKEN ? 'token' : process.env.MELI_REFRESH_TOKEN ? 'refresh token' : 'sin token (API publica y pagina)'}`);
+console.log(`  autenticacion: ${process.env.MELI_ACCESS_TOKEN ? 'token' : process.env.MELI_CLIENT_ID ? 'id + secreto' : 'SIN CREDENCIALES'}`);
 
 /* ---------- IDs faltantes ---------- */
 
@@ -149,8 +149,20 @@ if (fichasSinId.length || catalogoSinId.length) {
 
 /* ---------- consulta ---------- */
 
-const permalinks = {};
-for (const [id, e] of Object.entries(estado)) if (e.permalink) permalinks[id] = e.permalink;
+// Cuando la API no responde, el unico camino que queda es leer la pagina a la
+// que lleva el link de afiliado: Mercado Libre le sirve un muro anti-bots a las
+// URLs de producto pedidas desde un servidor.
+//
+// Eso tiene un costo real y por eso va con tope: cada visita cuenta como un
+// clic en el panel de afiliados. Miles de clics diarios sin una sola venta
+// ensucian las metricas y son el patron que los programas de afiliados marcan
+// como fraude. No arriesgamos la cuenta que cobra para ahorrarnos un token.
+const TOPE_AFILIADO = vcfg.maxPorLinkAfiliado ?? 20;
+const conCredenciales = Boolean(process.env.MELI_ACCESS_TOKEN || (process.env.MELI_CLIENT_ID && process.env.MELI_CLIENT_SECRET));
+
+// Las fichas van primero en la cola, asi que el tope las cubre a ellas.
+const urlsPermitidas = {};
+for (const c of cola.slice(0, TOPE_AFILIADO)) if (c.link) urlsPermitidas[c.id] = c.link;
 
 const LOTE = 20 * CONCURRENCIA;
 const resultados = new Map();
@@ -158,7 +170,7 @@ for (let i = 0; i < cola.length; i += LOTE) {
   const tanda = cola.slice(i, i + LOTE);
   const grupos = [];
   for (let j = 0; j < tanda.length; j += 20) grupos.push(tanda.slice(j, j + 20).map((c) => c.id));
-  const mapas = await enParalelo(grupos, CONCURRENCIA, (ids) => cliente.consultar(ids, { permalinks }));
+  const mapas = await enParalelo(grupos, CONCURRENCIA, (ids) => cliente.consultar(ids, { urls: urlsPermitidas }));
   for (const m of mapas) for (const [k, v] of m) resultados.set(k, v);
   process.stdout.write(`\r  ${Math.min(i + LOTE, cola.length)}/${cola.length}`);
   await dormir(vcfg.pausaMs);
@@ -245,6 +257,14 @@ Resultado del ${FECHA}${DRY ? ' (dry-run: no se escribio nada)' : ''}
   categorias ML    +${nuevasCat}
   fuentes          ${Object.entries(porFuente).map(([k, v]) => `${k}=${v}`).join(' ') || '-'}
 `);
+
+if (!conCredenciales) {
+  console.log(`Sin credenciales de Mercado Libre solo se pueden verificar ${TOPE_AFILIADO} productos por corrida,
+siguiendo el link de afiliado, porque la API esta cerrada y las URLs de
+producto devuelven el muro anti-bots. Con MELI_CLIENT_ID y MELI_CLIENT_SECRET
+se verifica el catalogo entero por la API, sin generar un solo clic falso.
+`);
+}
 
 if (ok === 0 && cola.length > 0) {
   console.error('Ningun producto pudo verificarse. Reviso el diagnostico antes de dar por bueno el dia:');
