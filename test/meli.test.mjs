@@ -68,7 +68,7 @@ test('precio de lista menor al actual se descarta', async () => {
   assert.equal(m.get('MLC1').precioLista, null);
 });
 
-test('si la API se cierra, el cliente pasa solo a leer la pagina publica', async () => {
+test('si la API se cierra, el cliente lee la pagina por la URL que se le da', async () => {
   const llamadas = [];
   const cliente = crearCliente({
     fetchImpl: async (url) => {
@@ -77,15 +77,44 @@ test('si la API se cierra, el cliente pasa solo a leer la pagina publica', async
       return respuesta(leerFixture('ficha-ml.html'));
     },
   });
-  const m = await cliente.consultar(['MLC48927241']);
+  const m = await cliente.consultar(['MLC48927241'], { urls: { MLC48927241: 'https://meli.la/2xPskdQ' } });
   assert.equal(m.get('MLC48927241').precio, 7990);
   assert.equal(m.get('MLC48927241').fuente, 'pagina');
-  assert.ok(llamadas.some((u) => u.includes('articulo.mercadolibre')));
+  assert.ok(llamadas.some((u) => u.includes('meli.la')), 'usa la URL que se le paso, no una armada');
 
   // Y no vuelve a golpear la API en el resto de la corrida.
   llamadas.length = 0;
-  await cliente.consultar(['MLC43844542']);
+  await cliente.consultar(['MLC43844542'], { urls: { MLC43844542: 'https://meli.la/x' } });
   assert.ok(!llamadas.some((u) => u.includes('/items?ids=')), 'no reintenta un camino ya descartado');
+});
+
+test('sin URL utilizable no gasta la peticion: la URL armada solo trae el muro anti-bots', async () => {
+  const llamadas = [];
+  const cliente = crearCliente({
+    fetchImpl: async (url) => {
+      llamadas.push(url);
+      return respuesta({}, { status: 401 });
+    },
+  });
+  const m = await cliente.consultar(['MLC48927241']);
+  assert.match(m.get('MLC48927241').error, /sin URL utilizable/);
+  assert.ok(!llamadas.some((u) => u.includes('articulo.mercadolibre')));
+});
+
+test('reconoce el muro anti-bots y no lo confunde con un producto caido', () => {
+  const muro = '<!DOCTYPE html><html data-assets-prefix="https://http2.mlstatic.com/frontend-assets/suspicious-traffic-frontend/"><head></head><body></body></html>';
+  const r = parsearPagina(muro, 'MLC1');
+  assert.match(r.error, /anti-bots/);
+});
+
+test('lee el precio del formato que usa hoy Mercado Libre', () => {
+  // Formato comprobado contra la pagina real: el precio viaja como JSON
+  // incrustado, no en datos estructurados.
+  const html = '<html><body><script>window.x={"type":"price","price":{"previous_price":{"value":34990,"currency":"CLP"},' +
+    '"current_price":{"value":26990,"currency":"CLP"},"discount_label":{"text":"22% OFF"}}}</script></body></html>';
+  const r = parsearPagina(html, 'MLC27895045');
+  assert.equal(r.precio, 26990);
+  assert.equal(r.precioLista, 34990);
 });
 
 test('un producto que no se puede leer devuelve error, no un precio falso', async () => {
