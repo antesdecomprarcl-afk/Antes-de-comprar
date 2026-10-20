@@ -1,0 +1,22 @@
+# Sonda de diagnostico contra Mercado Libre.
+#
+# Corre al tocar herramientas/sondear-ml.mjs. Existe porque el entorno donde se
+# desarrolla tiene mercadolibre.com bloqueado: sin esto habria que adivinar el
+# formato de las paginas, y adivinar es como se rompio el parser la primera vez.
+name: Sondeo
+
+on:
+  push:
+    paths: ['herramientas/sondear-ml.mjs']
+  workflow_dispatch:
+
+jobs:
+  sondear:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node herramientas/sondear-ml.mjs
